@@ -275,16 +275,26 @@ const ELITE_MODIFIERS=[
  {id:'explosive',name:'Explosive',desc:'Explodes violently on death.',color:'#ff8a5b'},
  {id:'armored',name:'Armored',desc:'Takes reduced damage.',color:'#9fb0c7'}
 ];
-let roomCleared=false,fireClock=0,keys={},joy={x:0,y:0,active:false},moveMagnitude=0,engineerHeat=0;
+let roomCleared=false,fireClock=0,moveMagnitude=0,engineerHeat=0;
 let hero={};
-let devGodMode=false,devInfiniteDamage=false,devCheatBuffer='';
+let devGodMode=false,devInfiniteDamage=false;
+const input=window.RB_INPUT.create({
+ joystick,
+ stick,
+ onCheat(word){
+  if(word==='heal'){
+   devGodMode=!devGodMode;
+   announce(devGodMode?'DEV: INVULNERABLE ON':'DEV: INVULNERABLE OFF');
+  }else if(word==='damage'){
+   devInfiniteDamage=!devInfiniteDamage;
+   announce(devInfiniteDamage?'DEV: INFINITE DAMAGE ON':'DEV: INFINITE DAMAGE OFF');
+  }
+ }
+});
 
+const playerSystem=window.RB_PLAYER;
 function makeHero(){
- const c=CHARACTERS[selected];
- return {name:selected,weapon:c.weapon,passive:c.passive,x:W/2,y:H*.78,r:15,hp:c.hp,maxHp:c.hp,speed:c.speed,
- damage:c.damage,fireRate:c.fireRate,bulletSpeed:500,multishot:1,spread:.14,pierce:0,crit:.08,critMul:2,shield:0,dangerAmp:1,poisonVulnerability:1,projectileScale:1,
- lifesteal:0,chainChance:0,adrenaline:0,berserker:0,healingPenalty:1,dangerAddict:false,
- facing:1,attackAnim:0,hitFlash:0,walkCycle:0};
+ return playerSystem.createHero({className:selected,characters:CHARACTERS,W,H});
 }
 function syncRunCoinsToBank(){
  if(activeProfileIndex<0)return;
@@ -762,33 +772,10 @@ function enforceEnemyWallClearance(e){
  }
 }
 
-function heroHitCircles(){
- // These track the visible BODY only. Weapons, staff, bow, blades and shoulder width do not count.
- // Coordinates are relative to the model drawn in drawHeroModel().
- return [
-   {x:hero.x, y:hero.y-17, r:6.5}, // head
-   {x:hero.x, y:hero.y-3,  r:9.0}, // torso
-   {x:hero.x, y:hero.y+10, r:7.5}  // hips / upper legs
- ];
-}
-function projectileHitsHero(p){
- for(const h of heroHitCircles()){
-   const rr=(p.r||0)+h.r;
-   if((p.x-h.x)*(p.x-h.x)+(p.y-h.y)*(p.y-h.y) < rr*rr) return true;
- }
- return false;
-}
-function enemyTouchesHero(e){
- for(const h of heroHitCircles()){
-   const rr=e.r+h.r;
-   if((e.x-h.x)*(e.x-h.x)+(e.y-h.y)*(e.y-h.y) < rr*rr) return true;
- }
- return false;
-}
-function heroMovementRadius(){
- // Used only for wall collision; smaller than the old 15px generic circle.
- return 9;
-}
+function heroHitCircles(){return playerSystem.hitCircles(hero)}
+function projectileHitsHero(p){return playerSystem.projectileHits(hero,p)}
+function enemyTouchesHero(e){return playerSystem.enemyTouches(hero,e)}
+function heroMovementRadius(){return playerSystem.movementRadius()}
 function updateDanger(dt){
  let proximity=0;
  for(const e of enemies){
@@ -809,25 +796,10 @@ function update(dt){
   smokeClock-=dt;
   if(smokeClock<=0){damageHero(Math.max(2,hero.maxHp*.035)*(hero.poisonVulnerability||1),'smoke');smokeClock=.8}
  }
- let dx=0,dy=0;if(keys.ArrowLeft||keys.a)dx-=1;if(keys.ArrowRight||keys.d)dx+=1;if(keys.ArrowUp||keys.w)dy-=1;if(keys.ArrowDown||keys.s)dy+=1;if(joy.active){dx=joy.x;dy=joy.y}
+ const {dx,dy}=input.getVector();
  const mag=Math.hypot(dx,dy);moveMagnitude=mag;
  if(mag>.05){
-  dx/=Math.max(1,mag);dy/=Math.max(1,mag);
-  hero.facing=dx>=0?1:(dx<0?-1:hero.facing);
-  hero.walkCycle+=dt*7*mag;
-  const totalX=dx*hero.speed*dt,totalY=dy*hero.speed*dt;
-  const steps=Math.max(1,Math.ceil(Math.hypot(totalX,totalY)/4));
-  for(let i=0;i<steps;i++){
-    const sx=totalX/steps,sy=totalY/steps;
-    const nx=Math.max(hero.r+16,Math.min(W-hero.r-16,hero.x+sx));
-    const ny=Math.max(hero.r+58,Math.min(H-hero.r-22,hero.y+sy));
-    let bx=false,by=false;
-    for(const w of walls){
-      if(circleRectCollide(nx,hero.y,heroMovementRadius(),w))bx=true;
-      if(circleRectCollide(hero.x,ny,heroMovementRadius(),w))by=true;
-    }
-    if(!bx)hero.x=nx;if(!by)hero.y=ny;
-  }
+  playerSystem.move(hero,dx,dy,dt,{W,H,walls,circleRectCollide});
  }
  hero.attackAnim=Math.max(0,hero.attackAnim-dt);
  hero.hitFlash=Math.max(0,hero.hitFlash-dt);
@@ -1585,34 +1557,6 @@ function draw(){
  requestAnimationFrame(loop)
 }
 function loop(now){const dt=Math.min(.033,(now-last)/1000||0);last=now;update(dt);draw()}
-
-addEventListener('keydown',e=>{
- const active=document.activeElement;
- if(active&&(active.tagName==='INPUT'||active.tagName==='TEXTAREA'||active.isContentEditable))return;
- if(/^[a-zA-Z]$/.test(e.key)){
-  devCheatBuffer=(devCheatBuffer+e.key.toLowerCase()).slice(-16);
-  if(devCheatBuffer.endsWith('heal')){
-   devGodMode=!devGodMode;devCheatBuffer='';
-   announce(devGodMode?'DEV: INVULNERABLE ON':'DEV: INVULNERABLE OFF')
-  }else if(devCheatBuffer.endsWith('damage')){
-   devInfiniteDamage=!devInfiniteDamage;devCheatBuffer='';
-   announce(devInfiniteDamage?'DEV: INFINITE DAMAGE ON':'DEV: INFINITE DAMAGE OFF')
-  }
- }
-});
-
-addEventListener('keydown',e=>{keys[e.key]=true;if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))e.preventDefault()});
-addEventListener('keyup',e=>keys[e.key]=false);
-
-let joyId=null;
-function joyMove(clientX,clientY){
- const r=joystick.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;let dx=clientX-cx,dy=clientY-cy,d=Math.hypot(dx,dy),max=38;
- if(d>max){dx=dx/d*max;dy=dy/d*max}stick.style.transform=`translate(${dx}px,${dy}px)`;joy.x=dx/max;joy.y=dy/max;joy.active=true
-}
-joystick.addEventListener('pointerdown',e=>{joyId=e.pointerId;joystick.setPointerCapture(e.pointerId);joyMove(e.clientX,e.clientY)});
-joystick.addEventListener('pointermove',e=>{if(e.pointerId===joyId)joyMove(e.clientX,e.clientY)});
-function joyEnd(){joyId=null;joy.x=0;joy.y=0;joy.active=false;stick.style.transform='translate(0,0)'}
-joystick.addEventListener('pointerup',joyEnd);joystick.addEventListener('pointercancel',joyEnd);
 
 cvs.addEventListener('pointerdown',e=>{
  if(!running||paused||dead)return;
