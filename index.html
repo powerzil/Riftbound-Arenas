@@ -1,770 +1,6 @@
 Yesterday 11:22 PM
 okay everything seems to be workng
 
-Yeah. Since you’re stopping tonight, here’s the full multiplayer plan so tomorrow we can just execute it instead of deciding architecture as we go.
-
-And no, I don’t need you to paste any more code tonight. We already know the current Step 8 structure. Tomorrow, safest option is to give me/upload the latest repo ZIP before we start, just so I’m working from the exact GitHub version that currently works.
-
-Where the game is now
-
-You’ve already done the annoying foundation work:
-
-Riftbound-Arenas/
-├── index.html
-├── css/
-│   └── style.css
-└── js/
-    ├── data.js
-    ├── storage.js
-    ├── audio.js
-    ├── effects.js
-    ├── player.js
-    ├── input.js
-    ├── enemies.js
-    ├── upgrades.js
-    ├── rooms.js
-    └── game.js
-
-So tomorrow we do not split anything else.
-
-We start building multiplayer.
-
-LOCAL MULTIPLAYER MASTER PLAN
-Phase 1 — Convert the game from hero to players[]
-
-This is the most important part.
-
-Right now the game is fundamentally:
-
-hero
-danger
-xp
-level
-xpNeed
-manualTarget
-engineerHeat
-
-We convert that into something like:
-
-players = [
-  {
-    id: 1,
-    hero: {...},
-    danger: 0,
-    xp: 0,
-    level: 1,
-    xpNeed: 11,
-    manualTarget: null,
-    engineerHeat: 0,
-    controls: "wasd"
-  }
-];
-
-Singleplayer still just has:
-
-players.length === 1
-
-Multiplayer has:
-
-players.length === 2
-
-That means we don't create two completely separate games.
-
-The entire engine just supports 1 or 2 players.
-
-That's the right architecture.
-
-Phase 2 — Preserve SINGLEPLAYER
-
-This is critical.
-
-Before we even make Player 2 playable:
-
-Singleplayer must continue working exactly as it does now.
-
-We should be able to launch:
-
-SINGLEPLAYER
-
-and internally it simply creates:
-
-players = [player1]
-
-Everything still works:
-
-attacks
-Danger
-XP
-upgrades
-curses
-contracts
-bosses
-poison
-hazards
-coins
-dungeons
-
-If Singleplayer breaks during the refactor, we fix it before continuing.
-
-Phase 3 — Activate the MULTIPLAYER button
-
-The current disabled button becomes:
-
-MULTIPLAYER
-
-Click it and get:
-
-MULTIPLAYER
-
-LOCAL CO-OP
-2 PLAYERS — SAME KEYBOARD
-
-ONLINE MULTIPLAYER
-COMING LATER
-
-Online remains completely fake/disabled.
-
-No networking.
-
-Phase 4 — Multiplayer character selection
-
-Local Co-op opens:
-
-PLAYER 1
-Choose Character
-
-Ranger
-Assassin
-Mage
-Engineer
-Necromancer
-
-and:
-
-PLAYER 2
-Choose Character
-
-Ranger
-Assassin
-Mage
-Engineer
-Necromancer
-
-Both players can use the same character.
-
-Example:
-
-P1: Ranger
-P2: Ranger
-
-should be allowed.
-
-Then:
-
-START CO-OP RUN
-Phase 5 — Controls
-Player 1
-W
-A S D
-Player 2
-↑
-← ↓ →
-
-Both use your existing mechanic:
-
-MOVE = dodge
-
-STOP = auto-fire
-
-So there's no need for attack buttons.
-
-That's actually why local multiplayer fits Riftbound pretty well.
-
-Phase 6 — Separate player stats
-
-Each player gets their own:
-
-HP
-Danger
-XP
-Level
-Class
-Damage
-Attack speed
-Crit
-Lifesteal
-Multishot
-Pierce
-Upgrades
-Curses
-Engineer Heat
-Summons
-etc.
-
-So P1 might have:
-
-Ranger
-Level 8
-92 Danger
-Multishot
-Fire Arrow
-Glass Cannon
-
-while P2 could be:
-
-Necromancer
-Level 6
-43 Danger
-Death Army
-Lifesteal
-Titan Armor
-
-That's what makes the co-op interesting.
-
-Phase 7 — Shared world state
-
-Some things should NOT be duplicated.
-
-Both players share:
-
-Dungeon
-Room
-Room timer
-Poison
-Enemies
-Boss
-Walls
-Hazards
-Contracts
-Treasure room
-Gate
-Room progression
-
-There is still only one room.
-
-Both players are fighting inside it.
-
-Phase 8 — Enemy targeting
-
-This is one of the most important changes in enemies.js.
-
-Right now enemies basically think:
-
-attack hero
-
-Instead:
-
-target = nearestLivingPlayer(enemy)
-
-So a Ghoul may chase P1 while a Cultist targets P2.
-
-Enemies should periodically reevaluate their target.
-
-Something like:
-
-getNearestLivingPlayer(enemy)
-
-Then boss abilities can also target:
-
-nearest player
-random player
-both players
-area between players
-
-depending on the attack.
-
-Phase 9 — Enemy projectiles
-
-Enemy shots also need to stop assuming one hero.
-
-Instead of:
-
-projectileHitsHero(projectile)
-
-we eventually do:
-
-for (const player of players) {
-    projectileHitsPlayer(player, projectile)
-}
-
-Then damage is applied specifically to that player.
-
-Phase 10 — Player attacks
-
-Each player independently auto-targets.
-
-Example:
-
-P1 stops moving.
-
-Nearest enemy to P1:
-
-Ghoul A
-
-P1 shoots Ghoul A.
-
-At the same moment, P2 stops moving.
-
-Nearest enemy to P2:
-
-Cultist B
-
-P2 attacks Cultist B.
-
-They do not need to attack the same target.
-
-Phase 11 — Ownership
-
-This is really important.
-
-Every player projectile should know:
-
-ownerId
-
-Example:
-
-{
-  ownerId: 1,
-  damage: 38,
-  ...
-}
-
-Then when that projectile hits:
-
-Lifesteal goes to the correct player.
-Kill effects go to the correct player.
-Necromancer summon belongs to the correct player.
-Danger effects belong to the correct player.
-Legendary powers trigger for the correct player.
-
-Without projectile ownership, multiplayer becomes a mess.
-
-Phase 12 — Summon ownership
-
-Necromancer wraiths also need:
-
-ownerId
-
-So:
-
-P1 Necromancer summon
-
-uses P1's stats.
-
-P2's summons use P2's stats.
-
-Same idea later if Engineer gets turrets.
-
-Phase 13 — Danger Meter
-
-Each player has their own Danger.
-
-Example:
-
-P1 Danger: 87%
-P2 Danger: 31%
-
-Near misses should increase the Danger of the player who actually dodged the projectile.
-
-Getting hit should crash that player's Danger.
-
-Not both.
-
-Class effects remain:
-
-Ranger → attack speed
-
-Assassin → slash/dash damage
-
-Mage → spell size/power
-
-Engineer → overclock
-
-Necromancer → wraith effects
-
-Phase 14 — XP
-
-I think XP should also be per-player, but kills should reward both players who are alive.
-
-That prevents weird gameplay where P1 steals every kill.
-
-Example:
-
-Enemy dies.
-
-Both receive:
-
-+XP
-
-but each has their own XP bar.
-
-Because their level-up rates can diverge depending on bonuses later.
-
-Phase 15 — Multiplayer level-ups
-
-This needs careful UX.
-
-If P1 levels:
-
-PLAYER 1 LEVEL UP
-Choose a Power
-
-The game pauses for both players.
-
-P1 chooses their upgrade.
-
-Then gameplay resumes.
-
-If both level simultaneously:
-
-PLAYER 1 LEVEL UP
-
-choose.
-
-Then:
-
-PLAYER 2 LEVEL UP
-
-choose.
-
-Then resume.
-
-We should not put two upgrade menus on-screen simultaneously.
-
-Phase 16 — HUD
-
-Desktop multiplayer gets something like:
-
-P1 — RANGER
-HP ██████████
-DANGER ███████
-LV 5
-
-       ROOM 8
-       25.4 SEC
-
-P2 — MAGE
-HP ███████
-DANGER ████
-LV 4
-
-Probably P1 information top-left.
-
-P2 top-right.
-
-Timer centered.
-
-That will look much cleaner.
-
-Phase 17 — Player identification
-
-Players need to be visually obvious.
-
-Not ugly red/blue recolors though.
-
-I'd use:
-
-P1
-
-small light-lavender ring underneath
-
-P2
-
-small gold/amber ring underneath
-
-Plus:
-
-P1
-
-and:
-
-P2
-
-above their heads briefly when a room begins.
-
-Their actual character cosmetics/colors remain intact.
-
-Phase 18 — Screen boundaries
-
-Because both players share one arena, we don't need split-screen.
-
-But they shouldn't be able to run five miles away from each other.
-
-The arena itself already limits them.
-
-So just keep both inside the same room.
-
-No camera system needed yet.
-
-That's another reason this multiplayer is realistic.
-
-Phase 19 — Multiplayer difficulty scaling
-
-Don't simply do:
-
-2 players = 2x enemies + 2x HP
-
-That would suck.
-
-Start around:
-
-Enemies: +35–50%
-Normal enemy HP: +20–30%
-Boss HP: +60–80%
-
-Enemy damage should barely increase.
-
-More enemies are more fun than enemies becoming bullet sponges.
-
-Phase 20 — Death
-
-First multiplayer version should keep this simple.
-
-If P1 dies:
-
-P1 DEAD
-
-P2 continues.
-
-If P2 kills the room, P1 can return next room with partial HP.
-
-OR we can immediately build the actual revive system.
-
-I actually think we should do the proper version shortly after the foundation:
-
-DOWNED
-
-instead of death.
-
-Phase 21 — Revive system
-
-Player hits 0 HP:
-
-They fall down.
-
-Teammate gets:
-
-REVIVE
-
-Standing near them fills:
-
-████████░░
-
-Maybe 3 seconds.
-
-If successful:
-
-25–35% HP
-
-If both players are down:
-
-RUN OVER
-
-This will probably be one of the most fun multiplayer mechanics.
-
-Phase 22 — Poison interaction
-
-Poison stays shared.
-
-Timer reaches zero:
-
-the room fills with poison exactly like Singleplayer.
-
-Both players suffocate independently based on their HP/vulnerability.
-
-And any level-up during poison still gives only curses.
-
-We do NOT change that mechanic.
-
-Phase 23 — Multiplayer coins
-
-Permanent cosmetic coins should probably be shared as the run's reward rather than P1/P2 getting separate pickup fights.
-
-At the end of rooms:
-
-Run Coins +15
-
-Then when the run saves, it goes to whichever character/profile launched the multiplayer run.
-
-Later, if we introduce true separate saved multiplayer characters, we can reconsider.
-
-For v1 local multiplayer, keep economy simple.
-
-Phase 24 — Room Contracts
-
-Contracts apply to the whole team.
-
-Example:
-
-BLOOD CONTRACT
-Enemies +35% speed
-1.65x rewards
-
-Both players experience it.
-
-Only one contract choice screen.
-
-Phase 25 — Path choices
-
-Same thing.
-
-Both players choose one:
-
-NORMAL
-ELITE
-TREASURE
-
-For now, whoever selects it controls the decision.
-
-Later we could add voting, but that's unnecessary.
-
-Phase 26 — Bosses
-
-Once multiplayer foundation works, bosses become much more interesting.
-
-Bosses should be able to:
-
-attack P1
-switch to P2
-target both
-punish players standing together
-punish players standing too far apart
-
-This is where co-op starts becoming really good.
-
-Phase 27 — Duo Powers
-
-NOT immediately.
-
-First make basic multiplayer solid.
-
-Then add rare:
-
-DUO POWER
-
-Example:
-
-Ranger + Mage:
-
-Steam Burst
-
-Fire arrow hits frozen enemy → explosion.
-
-Assassin + Necromancer:
-
-Soul Harvest
-
-Assassin kills dramatically increase spirit chance.
-
-Engineer + Ranger:
-
-Arc Arrows
-
-Engineer periodically electrifies Ranger arrows.
-
-These come after the base system works.
-
-Phase 28 — Multiplayer menu polish
-
-Final menu:
-
-MULTIPLAYER
-
-LOCAL CO-OP
-Two players • Same keyboard
-
-ONLINE
-Coming Later
-
-Then:
-
-PLAYER 1
-WASD
-Choose Hero
-
-PLAYER 2
-ARROW KEYS
-Choose Hero
-
-Then:
-
-BEGIN CO-OP
-The actual development order tomorrow
-
-Don't try to do everything above at once.
-
-We should go:
-
-MP1
-players[] foundation while Singleplayer still works.
-
-MP2
-Separate WASD / arrow controls.
-
-MP3
-Render two players.
-
-MP4
-Enemies target either player.
-
-MP5
-Separate damage / HP / Danger.
-
-MP6
-Separate attacks and projectile ownership.
-
-MP7
-Separate XP / upgrades.
-
-MP8
-Multiplayer HUD + character-selection screen.
-
-MP9
-Difficulty scaling.
-
-MP10
-Downed + revive.
-
-Then multiplayer is genuinely playable.
-
-Afterward:
-
-MP11
-Duo Powers.
-
-MP12
-Boss co-op mechanics.
-
-What to get from your coder tonight
-
-Since you said you have access to a good coder right now, the best thing they could do for us is not add multiplayer themselves.
-
-Ask them to look over the current architecture and specifically verify:
-
-“Are there any remaining gameplay variables in game.js that are player-specific but still global and therefore need to move into a per-player state object before implementing local multiplayer?”
-
-The main ones I'm expecting are:
-
-hero
-danger
-peakDanger
-damageTakenRoom
-xp
-level
-xpNeed
-fireClock
-manualTarget
-engineerHeat
-possibly revived
-
-Tell them not to change anything yet unless they find an obvious architectural issue.
-
-If they can give you a list of every player-specific global variable still in game.js, that would be extremely useful tomorrow.
-
-Otherwise, just upload/send me the current working repo ZIP tomorrow and we can start MP1 immediately.
-
-how long will this take us
-
 Realistically, the multiplayer foundation itself is probably 2–4 focused sessions, assuming we keep testing after each step and don’t try to cram everything into one giant change.
 
 A rough breakdown:
@@ -882,10 +118,35 @@ player_js_MP1_COPY_PASTE.txt
 Document
 game_js_MP1_COPY_PASTE.txt
 Document
+Pasted markdown.md
+File
+this is what happens when i open the file
 
-Library
-/
-index_MP1_COPY_PASTE.txt
+Yep — use this one instead:
+
+MP1 index.html — RAW CODE version
+
+When you open it, you should see actual code starting with something like:
+
+<!doctype html>
+<html lang="en">
+
+instead of the rendered ROOM / COINS / canvas screen.
+
+Then:
+
+Open it.
+Copy everything inside the code block.
+In GitHub, open index.html.
+Edit → Ctrl+A → paste.
+Commit.
+
+Your player.js and game.js text files should still open normally because they’re JavaScript, not HTML. 
+
+index_MP1_RAW_CODE.md
+Document
+
+index_MP1_RAW_CODE.md
 <!doctype html>
 <html lang="en">
 <head>
@@ -893,7 +154,6 @@ index_MP1_COPY_PASTE.txt
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Riftbound Arena</title>
 <link rel="stylesheet" href="css/style.css?v=9">
-
 
 </head>
 <body>
@@ -926,7 +186,6 @@ index_MP1_COPY_PASTE.txt
     </div>
   </div>
 
-
   <div id="gameWrap">
     <canvas id="game"></canvas>
     <div id="arenaHud">
@@ -947,6 +206,179 @@ index_MP1_COPY_PASTE.txt
     <div id="joystick" aria-label="movement joystick"><div id="stick"></div></div>
     <div id="hint">MOVE to dodge<br><strong>STOP to auto-fire</strong><br>TAP an enemy to target<br>WASD / arrows</div>
 
-
     <div id="startOverlay" class="overlay show titleScreen">
       <div class="titleSky" aria-hidden="true">
+        <div class="menuArch"></div>
+        <div class="menuRune runeOne">✦</div>
+        <div class="menuRune runeTwo">◇</div>
+        <div class="titleMist mistOne"></div>
+        <div class="titleMist mistTwo"></div>
+        <div class="titleTorch torchLeft"></div>
+        <div class="titleTorch torchRight"></div>
+      </div>
+      <div class="titleContent">
+        <div class="gameLogo">
+          <span class="logoRift">RIFTBOUND</span>
+          <span class="logoArena">ARENA</span>
+        </div>
+        <div id="mainProfileBadge" class="mainProfileBadge"></div>
+        <div class="titleButtons">
+          <button id="singleBtn" class="titleBtn">SINGLEPLAYER</button>
+          <button id="multiBtn" class="titleBtn disabled" disabled>MULTIPLAYER <small>COMING LATER</small></button>
+          <button id="charactersBtn" class="titleBtn">CHARACTERS</button>
+          <button id="bestiaryBtn" class="titleBtn">BESTIARY</button>
+          <button id="cosmeticsBtn" class="titleBtn">COSMETICS</button>
+          <button id="settingsBtn" class="titleBtn">SETTINGS</button>
+        </div>
+        <div class="titleFooter">Riftbound Arena • Prototype V9</div>
+      </div>
+    </div>
+
+    <div id="profileOverlay" class="overlay">
+      <div class="card profileCard">
+        <div class="pill">CHARACTERS</div>
+        <h2>Select Character</h2>
+        <p class="small">Each character slot has its own dungeon progress, coins, unlocks and cosmetics.</p>
+        <div id="profileList" class="stack"></div>
+        <button id="profileBackBtn" class="btn secondary" style="margin-top:12px">BACK</button>
+      </div>
+    </div>
+
+    <div id="createProfileOverlay" class="overlay">
+      <div class="card profileCard">
+        <div class="pill">NEW CHARACTER</div>
+        <h2>Create Character</h2>
+        <label class="small" for="profileNameInput">Name</label>
+        <input id="profileNameInput" class="nameInput" maxlength="16" placeholder="Wanderer">
+        <h3 style="margin-top:14px">Choose a fighter</h3>
+        <div id="charGrid" class="grid2"></div>
+        <div class="layoutPicker">
+          <div class="small">SCREEN LAYOUT</div>
+          <div class="layoutChoices">
+            <button id="mobileLayoutChoice" class="layoutChoice selected" type="button">
+              <strong>📱 Mobile</strong><span>Portrait arena with larger touch controls.</span>
+            </button>
+            <button id="desktopLayoutChoice" class="layoutChoice" type="button">
+              <strong>🖥️ Computer</strong><span>Wide arena designed for keyboard play.</span>
+            </button>
+          </div>
+        </div>
+        <div class="grid2" style="margin-top:12px">
+          <button id="createProfileCancelBtn" class="btn secondary">CANCEL</button>
+          <button id="createProfileBtn" class="btn">CREATE</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="dungeonOverlay" class="overlay">
+      <div class="card profileCard">
+        <div class="pill">SINGLEPLAYER</div>
+        <h2 id="dungeonProfileTitle">Choose Dungeon</h2>
+        <p class="small">Three bosses per dungeon. Completed dungeons stay completed for this character.</p>
+        <div id="dungeonSelect" class="stack" style="margin:12px 0"></div>
+        <div class="grid2">
+          <button id="dungeonBackBtn" class="btn secondary">BACK</button>
+          <button id="playBtn" class="btn">ENTER DUNGEON</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="settingsOverlay" class="overlay">
+      <div class="card profileCard">
+        <div class="pill">SETTINGS</div>
+        <h2>Settings</h2>
+        <div class="choice" style="cursor:default">
+          <strong>Audio</strong><span>Use the speaker button during gameplay to mute/unmute.</span>
+        </div>
+        <div class="choice" style="cursor:default">
+          <strong>Controls</strong><span>Mobile: joystick. Desktop: WASD / arrow keys. Stop moving to fire.</span>
+        </div>
+        <div class="choice" style="cursor:default">
+          <strong>Screen Layout</strong><span id="currentLayoutText">Current layout</span>
+          <div class="layoutChoices" style="margin-top:9px">
+            <button id="settingsMobileLayout" class="layoutChoice" type="button"><strong>📱 Mobile</strong><span>Portrait</span></button>
+            <button id="settingsDesktopLayout" class="layoutChoice" type="button"><strong>🖥️ Computer</strong><span>Widescreen</span></button>
+          </div>
+        </div>
+        <button id="settingsBackBtn" class="btn secondary" style="margin-top:12px">BACK</button>
+      </div>
+    </div>
+
+    <div id="skillOverlay" class="overlay">
+      <div class="card">
+        <div class="pill">LEVEL UP</div>
+        <h2>Choose a Power</h2>
+        <div id="skillList" class="stack"></div>
+      </div>
+    </div>
+
+    <div id="contractOverlay" class="overlay">
+      <div class="card">
+        <div class="pill">ROOM CONTRACT</div>
+        <h2>Raise the Stakes?</h2>
+        <p class="small">Higher risk means better room rewards. You can always take the normal room.</p>
+        <div id="contractList" class="stack"></div>
+      </div>
+    </div>
+
+    <div id="pathOverlay" class="overlay">
+      <div class="card">
+        <div class="pill">CHOOSE YOUR PATH</div>
+        <h2>Pick a Door</h2>
+        <div id="pathList" class="stack"></div>
+      </div>
+    </div>
+
+    <div id="deadOverlay" class="overlay">
+      <div class="card">
+        <div class="pill">RUN ENDED</div>
+        <h2 id="deadTitle">Room 1</h2>
+        <p id="deadInfo"></p>
+        <div class="stack">
+          <button id="againBtn" class="btn">RUN AGAIN</button>
+          <button id="reviveBtn" class="btn secondary">WATCH AD (MOCK) — REVIVE</button>
+          <button id="homeBtn" class="btn secondary">HOME</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="pauseOverlay" class="overlay">
+      <div class="card">
+        <div class="pill">PAUSED</div>
+        <h2>Take a breath</h2>
+        <div class="stack">
+          <button id="resumeBtn" class="btn">RESUME</button>
+          <button id="pauseHubBtn" class="btn secondary">COSMETICS & BESTIARY</button>
+          <button id="pauseHomeBtn" class="btn secondary">QUIT TO HOME</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="hubOverlay" class="overlay">
+      <div class="card" style="max-height:82vh;overflow:auto">
+        <div class="pill">COLLECTION</div>
+        <h2>Menu</h2>
+        <p class="small" style="margin-bottom:10px">Bank: <strong id="hubBank">0</strong> coins</p>
+        <div id="hubTabs" style="display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-bottom:12px"></div>
+        <div id="hubPanel" class="stack"></div>
+        <div style="height:12px"></div>
+        <button id="hubCloseBtn" class="btn secondary">BACK</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Multiplayer Foundation MP1 / cache v9 -->
+<script src="js/data.js?v=9"></script>
+<script src="js/storage.js?v=9"></script>
+<script src="js/audio.js?v=9"></script>
+<script src="js/effects.js?v=9"></script>
+<script src="js/player.js?v=9"></script>
+<script src="js/input.js?v=9"></script>
+<script src="js/enemies.js?v=9"></script>
+<script src="js/upgrades.js?v=9"></script>
+<script src="js/rooms.js?v=9"></script>
+<script src="js/game.js?v=9"></script>
+
+</body>
+</html>
