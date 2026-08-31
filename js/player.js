@@ -101,11 +101,13 @@ window.RB_PLAYER = (() => {
     }
   }
 
-  function createRuntimePlayer({id=1,className,characters,W,H,controlScheme='combined'}){
+  function createRuntimePlayer({id=1,className,characters,W,H,controlScheme='combined',enabled=true}){
     return {
       id,
+      label:`P${id}`,
       className,
       controlScheme,
+      enabled,
       hero:createHero({className,characters,W,H}),
       danger:0,
       peakDanger:0,
@@ -127,7 +129,8 @@ window.RB_PLAYER = (() => {
       className,
       characters,
       W,H,
-      controlScheme:player.controlScheme
+      controlScheme:player.controlScheme,
+      enabled:player.enabled
     });
     Object.keys(player).forEach(k=>delete player[k]);
     Object.assign(player,fresh);
