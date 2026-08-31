@@ -176,7 +176,14 @@ function openCreateProfile(i){
 }
 function openDungeonMenu(){
  renderDungeonSelect();
- dungeonProfileTitle.textContent=`${save.name} — Choose Dungeon`;
+ const pill=dungeonOverlay.querySelector('.pill');
+ if(coopTestMode){
+  if(pill)pill.textContent='LOCAL CO-OP • MP3 TEST';
+  dungeonProfileTitle.textContent=`${save.name} + P2 ${coopP2Class} — Choose Dungeon`;
+ }else{
+  if(pill)pill.textContent='SINGLEPLAYER';
+  dungeonProfileTitle.textContent=`${save.name} — Choose Dungeon`;
+ }
  profileOverlay.classList.remove('show');startOverlay.classList.remove('show');dungeonOverlay.classList.add('show')
 }
 renderChars();
@@ -266,7 +273,14 @@ players=[
  })
 ];
 
-function activePlayerState(){return players[0]}
+let compatPlayerIndex=0;
+let coopTestMode=false;
+let coopP2Class='Mage';
+function activePlayerState(){return players[compatPlayerIndex]||players[0]}
+function withPlayerState(index,fn){
+ const prev=compatPlayerIndex;compatPlayerIndex=index;
+ try{return fn()}finally{compatPlayerIndex=prev}
+}
 function installSinglePlayerCompatibilityBindings(){
  const keys=[
   'hero','danger','peakDanger','damageTakenRoom','xp','level','xpNeed',
@@ -290,12 +304,14 @@ installSinglePlayerCompatibilityBindings();
 window.RB_RUNTIME={
  get players(){return players},
  get activePlayer(){return activePlayerState()},
+ get coopTestMode(){return coopTestMode},
  snapshot(){
   return players.map(p=>({
    id:p.id,label:p.label,enabled:p.enabled,
    className:p.className,controlScheme:p.controlScheme,
    hp:p.hero.hp,maxHp:p.hero.maxHp,danger:p.danger,xp:p.xp,
-   level:p.level,xpNeed:p.xpNeed,engineerHeat:p.engineerHeat
+   level:p.level,xpNeed:p.xpNeed,engineerHeat:p.engineerHeat,
+   x:Math.round(p.hero.x),y:Math.round(p.hero.y)
   }));
  },
  controls(){
@@ -305,6 +321,10 @@ window.RB_RUNTIME={
    p2:input.getVectorFor('arrows'),
    singleplayer:input.getVectorFor('combined')
   };
+ },
+ setPlayer2Class(name){
+  if(!(name in CHARACTERS))return false;
+  coopP2Class=name;players[1].className=name;return true;
  }
 };
 
@@ -345,13 +365,21 @@ function ui(){
 }
 function resetRun(){
  running=true;paused=false;dead=false;dungeon=save.selectedDungeon||1;room=1;coins=0;runCoinsBanked=0;noHealNext=false;
- // MP2: Singleplayer still accepts both keyboard schemes. Player 2 already
- // exists as an independent dormant runtime state for the next multiplayer step.
- players[0].controlScheme='combined';players[0].enabled=true;
- players[1].controlScheme='arrows';players[1].enabled=false;
- playerSystem.resetRuntimePlayer(activePlayerState(),{className:selected,characters:CHARACTERS,W,H});
+ compatPlayerIndex=0;
+ if(coopTestMode){
+  players[0].controlScheme='wasd';players[0].enabled=true;
+  players[1].controlScheme='arrows';players[1].enabled=true;
+  playerSystem.resetRuntimePlayer(players[0],{className:selected,characters:CHARACTERS,W,H});
+  playerSystem.resetRuntimePlayer(players[1],{className:coopP2Class,characters:CHARACTERS,W,H});
+ }else{
+  players[0].controlScheme='combined';players[0].enabled=true;
+  players[1].controlScheme='arrows';players[1].enabled=false;
+  playerSystem.resetRuntimePlayer(players[0],{className:selected,characters:CHARACTERS,W,H});
+  playerSystem.resetRuntimePlayer(players[1],{className:coopP2Class,characters:CHARACTERS,W,H});
+ }
  save.selected=selected;persist();startOverlay.classList.remove('show');dungeonOverlay.classList.remove('show');deadOverlay.classList.remove('show');skillOverlay.classList.remove('show');contractOverlay.classList.remove('show');pathOverlay.classList.remove('show');
- currentContract=CONTRACTS[0];buildRoom();ui();announce(selected.toUpperCase())
+ currentContract=CONTRACTS[0];buildRoom();ui();
+ announce(coopTestMode?'CO-OP TEST • P1 WASD • P2 ARROWS':selected.toUpperCase())
 }
 function buildWalls(){
  walls=[];
@@ -372,7 +400,15 @@ function spawnHazardsForRoom(){
 function applyEliteModifier(e,modId){enemySystem.applyEliteModifier(e,modId)}
 function buildRoom(){
  roomCleared=false;gate=null;shots=[];enemyShots=[];particles=[];wraiths=[];enemies=[];potions=[];chest=null;manualTarget=null;hazards=[];buildWalls();
- hero.x=W/2;hero.y=H*.78;danger=0;peakDanger=0;damageTakenRoom=0;smoke=false;smokeOpacity=0;smokeClock=0;
+ compatPlayerIndex=0;
+ const enabledPlayers=players.filter(p=>p.enabled);
+ enabledPlayers.forEach((p,i)=>{
+  const offset=enabledPlayers.length>1?(i===0?-28:28):0;
+  p.hero.x=W/2+offset;p.hero.y=H*.78;
+  p.danger=0;p.peakDanger=0;p.damageTakenRoom=0;
+  p.moveMagnitude=0;p.fireClock=0;p.manualTarget=null;
+ });
+ smoke=false;smokeOpacity=0;smokeClock=0;
  roomTimerMax=room%5===0?75:42;roomTimer=roomTimerMax;roomStartAt=performance.now();roomRewardMult=currentContract.mult||1;
  const boss=room%5===0;
  eliteRoomActive=false;
@@ -764,13 +800,26 @@ function update(dt){
   smokeClock-=dt;
   if(smokeClock<=0){damageHero(Math.max(2,hero.maxHp*.035)*(hero.poisonVulnerability||1),'smoke');smokeClock=.8}
  }
- const {dx,dy}=input.getVectorFor(activePlayerState().controlScheme);
- const mag=Math.hypot(dx,dy);moveMagnitude=mag;
+ compatPlayerIndex=0;
+ const {dx,dy}=input.getVectorFor(players[0].controlScheme);
+ const mag=Math.hypot(dx,dy);players[0].moveMagnitude=mag;
  if(mag>.05){
-  playerSystem.move(hero,dx,dy,dt,{W,H,walls,circleRectCollide});
+  playerSystem.move(players[0].hero,dx,dy,dt,{W,H,walls,circleRectCollide});
  }
- hero.attackAnim=Math.max(0,hero.attackAnim-dt);
- hero.hitFlash=Math.max(0,hero.hitFlash-dt);
+ players[0].hero.attackAnim=Math.max(0,players[0].hero.attackAnim-dt);
+ players[0].hero.hitFlash=Math.max(0,players[0].hero.hitFlash-dt);
+
+ // MP3: Player 2 has independent movement/render state only.
+ // Combat, targeting, damage, Danger and XP are intentionally still P1-only.
+ if(players[1].enabled){
+  const v2=input.getVectorFor(players[1].controlScheme);
+  const mag2=Math.hypot(v2.dx,v2.dy);players[1].moveMagnitude=mag2;
+  if(mag2>.05){
+   playerSystem.move(players[1].hero,v2.dx,v2.dy,dt,{W,H,walls,circleRectCollide});
+  }
+  players[1].hero.attackAnim=Math.max(0,players[1].hero.attackAnim-dt);
+  players[1].hero.hitFlash=Math.max(0,players[1].hero.hitFlash-dt);
+ }
  updateDanger(dt);
  if(moveMagnitude>.1){
   const trailDef=TRAILS.find(t=>t.id===save.equipped.trail);
@@ -1134,6 +1183,19 @@ function drawHeroModel(){
  ctx.restore();
  ctx.restore()
 }
+function drawPlayerMarker(player,index,phase='before'){
+ if(!player.enabled)return;
+ const h=player.hero;
+ const col=index===0?'#c9baff':'#ffd166';
+ if(phase==='before'){
+  ctx.save();ctx.strokeStyle=col;ctx.globalAlpha=.82;ctx.lineWidth=2;
+  ctx.beginPath();ctx.ellipse(h.x,h.y+13,22,8,0,0,Math.PI*2);ctx.stroke();ctx.restore();
+ }else{
+  ctx.save();ctx.font='700 11px system-ui, sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillStyle='rgba(8,12,18,.78)';ctx.fillRect(h.x-14,h.y-43,28,15);
+  ctx.fillStyle=col;ctx.fillText(player.label,h.x,h.y-35.5);ctx.restore();
+ }
+}
 function drawEnemyModel(e){
  const cat=enemyMoveCat(e.type);
  e.bounceClock=e.bounceClock||0;
@@ -1346,16 +1408,23 @@ function draw(){
  for(const b of enemyShots){ctx.fillStyle='#ff6e78';ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,Math.PI*2);ctx.fill()}
  enemies.forEach(drawEnemyModel);
  for(const w of wraiths){ctx.globalAlpha=Math.max(.25,w.life/7);ctx.fillStyle='#8ce5d0';ctx.beginPath();ctx.arc(w.x,w.y,10,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1}
- drawHeroModel();
- drawPet();
+ players.forEach((p,i)=>{if(p.enabled)drawPlayerMarker(p,i,'before')});
+ players.forEach((p,i)=>{
+  if(!p.enabled)return;
+  withPlayerState(i,()=>drawHeroModel());
+  drawPlayerMarker(p,i,'after');
+ });
+ withPlayerState(0,()=>drawPet());
+ compatPlayerIndex=0;
  for(const c of chainFx){ctx.globalAlpha=Math.max(0,c.life/.15);ctx.strokeStyle='#ffd666';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(c.x1,c.y1);ctx.lineTo(c.x2,c.y2);ctx.stroke()}ctx.globalAlpha=1;
  for(const p of particles){ctx.globalAlpha=Math.max(0,p.life/.45);ctx.fillStyle=p.color||'#ffd56e';ctx.fillRect(p.x,p.y,3,3)}ctx.globalAlpha=1;
  // danger aura
- if(danger>2){
-  const glowR=38+danger*.9,alpha=Math.min(.5,danger/100*.5);
-  const glow=ctx.createRadialGradient(hero.x,hero.y,4,hero.x,hero.y,glowR);
+ const p1=players[0];
+ if(p1.danger>2){
+  const glowR=38+p1.danger*.9,alpha=Math.min(.5,p1.danger/100*.5),h=p1.hero;
+  const glow=ctx.createRadialGradient(h.x,h.y,4,h.x,h.y,glowR);
   glow.addColorStop(0,`rgba(255,150,60,${alpha})`);glow.addColorStop(1,'rgba(255,150,60,0)');
-  ctx.fillStyle=glow;ctx.beginPath();ctx.arc(hero.x,hero.y,glowR,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle=glow;ctx.beginPath();ctx.arc(h.x,h.y,glowR,0,Math.PI*2);ctx.fill();
  }
  // poison gas
  if(smoke){
@@ -1390,8 +1459,14 @@ desktopLayoutChoice.addEventListener('click',()=>{creatingDisplayMode='desktop';
 settingsMobileLayout.addEventListener('click',()=>setCurrentProfileLayout('mobile'));
 settingsDesktopLayout.addEventListener('click',()=>setCurrentProfileLayout('desktop'));
 
-$('singleBtn').addEventListener('click',openProfiles);
-$('charactersBtn').addEventListener('click',openProfiles);
+const multiBtn=$('multiBtn');
+if(multiBtn){
+ multiBtn.disabled=false;multiBtn.classList.remove('disabled');
+ multiBtn.innerHTML='MULTIPLAYER <small>MP3 TEST</small>';
+ multiBtn.addEventListener('click',()=>{coopTestMode=true;openProfiles()});
+}
+$('singleBtn').addEventListener('click',()=>{coopTestMode=false;openProfiles()});
+$('charactersBtn').addEventListener('click',()=>{coopTestMode=false;openProfiles()});
 $('bestiaryBtn').addEventListener('click',()=>{hubTab='bestiary';hubReturnTo='start';renderHub();startOverlay.classList.remove('show');hubOverlay.classList.add('show')});
 $('cosmeticsBtn').addEventListener('click',()=>{hubTab='outfits';hubReturnTo='start';renderHub();startOverlay.classList.remove('show');hubOverlay.classList.add('show')});
 $('settingsBtn').addEventListener('click',()=>{updateLayoutChoiceUI(activeProfileIndex>=0?save.displayMode:(window.innerWidth>=850?'desktop':'mobile'));startOverlay.classList.remove('show');settingsOverlay.classList.add('show')});
