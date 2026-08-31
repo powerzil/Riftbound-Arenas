@@ -222,7 +222,7 @@ $('hubCloseBtn').addEventListener('click',()=>{hubOverlay.classList.remove('show
 
 let running=false,paused=false,dead=false,last=performance.now(),room=1,coins=0,runCoinsBanked=0,xp=0,level=1,xpNeed=11,revived=false;
 let roomTimerMax=40,roomTimer=40,smoke=false,smokeClock=0,smokeOpacity=0;
-let danger=0,peakDanger=0,damageTakenRoom=0,roomStartAt=0,roomRewardMult=1,currentContract=CONTRACTS[0],noHealNext=false;
+let danger=0,peakDanger=0,damageTakenRoom=0,roomStartAt=0,roomRewardMult=1,currentContract=window.RB_ROOMS.CONTRACTS[0],noHealNext=false;
 let enemies=[],shots=[],enemyShots=[],particles=[],walls=[],gate=null,wraiths=[],chainFx=[],potions=[],chest=null,treasureRoomActive=false,manualTarget=null,hazards=[],eliteRoomActive=false,forcedRoomKind=null;
 let roomCleared=false,fireClock=0,moveMagnitude=0,engineerHeat=0;
 let hero={};
