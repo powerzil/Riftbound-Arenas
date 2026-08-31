@@ -65,6 +65,7 @@ function switchProfile(index){
  save=normalizeProfile(rootSave.profiles[index]);
  selected=save.selected||'Ranger';
  dungeon=save.selectedDungeon||1;
+ if(players[0])players[0].className=selected;
  persist();
  applyLayoutMode(save.displayMode);updateLayoutChoiceUI(save.displayMode);
  renderChars();
@@ -220,12 +221,12 @@ $('pauseHubBtn').addEventListener('click',()=>{hubReturnTo='pause';renderHub();p
 $('hubCloseBtn').addEventListener('click',()=>{hubOverlay.classList.remove('show');(hubReturnTo==='pause'?pauseOverlay:startOverlay).classList.add('show')});
 
 
-let running=false,paused=false,dead=false,last=performance.now(),room=1,coins=0,runCoinsBanked=0,xp=0,level=1,xpNeed=11,revived=false;
+let running=false,paused=false,dead=false,last=performance.now(),room=1,coins=0,runCoinsBanked=0;
 let roomTimerMax=40,roomTimer=40,smoke=false,smokeClock=0,smokeOpacity=0;
-let danger=0,peakDanger=0,damageTakenRoom=0,roomStartAt=0,roomRewardMult=1,currentContract=window.RB_ROOMS.CONTRACTS[0],noHealNext=false;
-let enemies=[],shots=[],enemyShots=[],particles=[],walls=[],gate=null,wraiths=[],chainFx=[],potions=[],chest=null,treasureRoomActive=false,manualTarget=null,hazards=[],eliteRoomActive=false,forcedRoomKind=null;
-let roomCleared=false,fireClock=0,moveMagnitude=0,engineerHeat=0;
-let hero={};
+let roomStartAt=0,roomRewardMult=1,currentContract=window.RB_ROOMS.CONTRACTS[0],noHealNext=false;
+let enemies=[],shots=[],enemyShots=[],particles=[],walls=[],gate=null,wraiths=[],chainFx=[],potions=[],chest=null,treasureRoomActive=false,hazards=[],eliteRoomActive=false,forcedRoomKind=null;
+let roomCleared=false;
+let players=[];
 let devGodMode=false,devInfiniteDamage=false;
 const input=window.RB_INPUT.create({
  joystick,
@@ -242,6 +243,51 @@ const input=window.RB_INPUT.create({
 });
 
 const playerSystem=window.RB_PLAYER;
+
+// Multiplayer foundation: runtime player state now lives in players[].
+// During MP1, the existing singleplayer code is kept stable through a temporary
+// compatibility bridge that maps old singleplayer identifiers to players[0].
+players=[playerSystem.createRuntimePlayer({
+ id:1,
+ className:selected,
+ characters:CHARACTERS,
+ W,H,
+ controlScheme:'combined'
+})];
+
+function activePlayerState(){return players[0]}
+function installSinglePlayerCompatibilityBindings(){
+ const keys=[
+  'hero','danger','peakDanger','damageTakenRoom','xp','level','xpNeed',
+  'manualTarget','fireClock','moveMagnitude','engineerHeat','revived'
+ ];
+ for(const key of keys){
+  const existing=Object.getOwnPropertyDescriptor(globalThis,key);
+  if(existing&&!existing.configurable){
+   throw new Error('Cannot install player-state compatibility binding for '+key);
+  }
+  Object.defineProperty(globalThis,key,{
+   configurable:true,
+   enumerable:false,
+   get(){return activePlayerState()[key]},
+   set(value){activePlayerState()[key]=value}
+  });
+ }
+}
+installSinglePlayerCompatibilityBindings();
+
+window.RB_RUNTIME={
+ get players(){return players},
+ get activePlayer(){return activePlayerState()},
+ snapshot(){
+  return players.map(p=>({
+   id:p.id,className:p.className,controlScheme:p.controlScheme,
+   hp:p.hero.hp,maxHp:p.hero.maxHp,danger:p.danger,xp:p.xp,
+   level:p.level,xpNeed:p.xpNeed,engineerHeat:p.engineerHeat
+  }));
+ }
+};
+
 const enemySystem=window.RB_ENEMIES;
 const roomSystem=window.RB_ROOMS;
 const CONTRACTS=roomSystem.CONTRACTS;
@@ -278,8 +324,9 @@ function ui(){
  arenaTimerBox.classList.toggle('poison',smoke);
 }
 function resetRun(){
- running=true;paused=false;dead=false;dungeon=save.selectedDungeon||1;room=1;coins=0;runCoinsBanked=0;xp=0;level=1;xpNeed=11;revived=false;danger=0;peakDanger=0;engineerHeat=0;noHealNext=false;
- save.selected=selected;persist();hero=makeHero();startOverlay.classList.remove('show');dungeonOverlay.classList.remove('show');deadOverlay.classList.remove('show');skillOverlay.classList.remove('show');contractOverlay.classList.remove('show');pathOverlay.classList.remove('show');
+ running=true;paused=false;dead=false;dungeon=save.selectedDungeon||1;room=1;coins=0;runCoinsBanked=0;noHealNext=false;
+ playerSystem.resetRuntimePlayer(activePlayerState(),{className:selected,characters:CHARACTERS,W,H});
+ save.selected=selected;persist();startOverlay.classList.remove('show');dungeonOverlay.classList.remove('show');deadOverlay.classList.remove('show');skillOverlay.classList.remove('show');contractOverlay.classList.remove('show');pathOverlay.classList.remove('show');
  currentContract=CONTRACTS[0];buildRoom();ui();announce(selected.toUpperCase())
 }
 function buildWalls(){
@@ -1350,7 +1397,7 @@ $('resumeBtn').addEventListener('click',()=>{manualPause=false;paused=false;paus
 $('pauseHomeBtn').addEventListener('click',()=>{manualPause=false;paused=false;running=false;pauseOverlay.classList.remove('show');renderProfiles();startOverlay.classList.add('show')});
 muteBtn.addEventListener('click',()=>{const on=!audio.isEnabled();audio.setEnabled(on);muteBtn.textContent=on?'🔊':'🔇'});
 
-hero=makeHero();dungeon=save.selectedDungeon||1;
+dungeon=save.selectedDungeon||1;
 applyLayoutMode(activeProfileIndex>=0?save.displayMode:(window.innerWidth>=850?'desktop':'mobile'));
 updateLayoutChoiceUI(activeProfileIndex>=0?save.displayMode:(window.innerWidth>=850?'desktop':'mobile'));
 renderProfiles();renderDungeonSelect();ui();requestAnimationFrame(loop)
