@@ -30,47 +30,13 @@ let W=0,H=0,ratio=1;
 function resize(){const r=wrap.getBoundingClientRect();W=r.width;H=r.height;ratio=Math.min(2,devicePixelRatio||1);cvs.width=W*ratio;cvs.height=H*ratio;ctx.setTransform(ratio,0,0,ratio,0,0)}
 addEventListener('resize',resize);resize();
 
-const LEGACY_SAVE='riftbound_v3';
-const SAVE='riftbound_character_profiles_v1';
-
-function freshProfile(name='Wanderer',fighter='Ranger'){
- return {
-  name, best:0, bank:0, selected:fighter, displayMode:'mobile',
-  unlockedDungeon:1, completedDungeons:[], selectedDungeon:1,
-  unlocked:{outfits:['default'],hats:['none'],trails:['none'],pets:['none']},
-  equipped:{outfit:'default',hat:'none',trail:'none',pet:'none'},
-  seen:{}
- };
-}
-function normalizeProfile(p){
- p=p||freshProfile();
- p.name=p.name||'Wanderer';p.best=p.best||0;p.bank=p.bank||0;p.selected=p.selected||'Ranger';p.displayMode=(p.displayMode==='desktop'?'desktop':'mobile');
- p.unlockedDungeon=p.unlockedDungeon||1;p.completedDungeons=p.completedDungeons||[];p.selectedDungeon=p.selectedDungeon||1;
- p.unlocked=p.unlocked||{outfits:['default'],hats:['none'],trails:['none'],pets:['none']};
- p.equipped=p.equipped||{outfit:'default',hat:'none',trail:'none',pet:'none'};
- p.seen=p.seen||{};
- return p;
-}
-let rootSave=JSON.parse(localStorage.getItem(SAVE)||'{}');
-if(!Array.isArray(rootSave.profiles)){
- let legacy=null;
- try{legacy=JSON.parse(localStorage.getItem(LEGACY_SAVE)||'null')}catch(e){}
- rootSave={activeProfile:0,legacyMigrated:true,profiles:[legacy?normalizeProfile({...legacy,name:legacy.name||'Legacy Hero'}):freshProfile('Wanderer','Ranger'),null,null,null]};
-}
-if(!rootSave.legacyMigrated)rootSave.legacyMigrated=true;
-// Never re-import the old pre-profile save after migration.
-try{localStorage.removeItem(LEGACY_SAVE)}catch(e){}
-while(rootSave.profiles.length<4)rootSave.profiles.push(null);
-let requestedActive=Number.isInteger(rootSave.activeProfile)?rootSave.activeProfile:0;
-if(requestedActive<0||requestedActive>3||!rootSave.profiles[requestedActive])requestedActive=rootSave.profiles.findIndex(Boolean);
-let activeProfileIndex=requestedActive;
-let save=activeProfileIndex>=0?normalizeProfile(rootSave.profiles[activeProfileIndex]):freshProfile('Wanderer','Ranger');
-if(activeProfileIndex>=0)rootSave.profiles[activeProfileIndex]=save;
+const storage=window.RB_STORAGE;
+const freshProfile=storage.freshProfile;
+const normalizeProfile=storage.normalizeProfile;
+let {rootSave,activeProfileIndex,save}=storage.load();
 
 function persist(){
- rootSave.activeProfile=activeProfileIndex;
- if(activeProfileIndex>=0&&rootSave.profiles[activeProfileIndex])rootSave.profiles[activeProfileIndex]=save;
- localStorage.setItem(SAVE,JSON.stringify(rootSave));
+ storage.persist(rootSave,activeProfileIndex,save);
 }
 
 function applyLayoutMode(mode){
@@ -177,7 +143,7 @@ function renderProfiles(){
     }
     rootSave.profiles[i]=null;
     rootSave.legacyMigrated=true;
-    try{localStorage.removeItem(LEGACY_SAVE)}catch(e){}
+    storage.clearLegacy();
     if(i===activeProfileIndex){
       const next=rootSave.profiles.findIndex(Boolean);
       activeProfileIndex=next;
