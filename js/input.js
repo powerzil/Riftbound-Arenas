@@ -81,14 +81,32 @@ window.RB_INPUT = (() => {
     joystick.addEventListener('pointerup',joyEnd);
     joystick.addEventListener('pointercancel',joyEnd);
 
-    function getVector(){
+    function keyboardVector(controlScheme='combined'){
       let dx=0,dy=0;
-      if(keys.ArrowLeft||keys.a)dx-=1;
-      if(keys.ArrowRight||keys.d)dx+=1;
-      if(keys.ArrowUp||keys.w)dy-=1;
-      if(keys.ArrowDown||keys.s)dy+=1;
 
-      if(joy.active){
+      if(controlScheme==='combined'||controlScheme==='wasd'){
+        if(keys.a||keys.A)dx-=1;
+        if(keys.d||keys.D)dx+=1;
+        if(keys.w||keys.W)dy-=1;
+        if(keys.s||keys.S)dy+=1;
+      }
+
+      if(controlScheme==='combined'||controlScheme==='arrows'){
+        if(keys.ArrowLeft)dx-=1;
+        if(keys.ArrowRight)dx+=1;
+        if(keys.ArrowUp)dy-=1;
+        if(keys.ArrowDown)dy+=1;
+      }
+
+      return {dx,dy};
+    }
+
+    function getVector(controlScheme='combined'){
+      let {dx,dy}=keyboardVector(controlScheme);
+
+      // The touch joystick always belongs to Player 1. It is intentionally
+      // ignored by the arrows-only Player 2 control scheme.
+      if(joy.active&&controlScheme!=='arrows'){
         dx=joy.x;
         dy=joy.y;
       }
@@ -96,10 +114,21 @@ window.RB_INPUT = (() => {
       return {dx,dy};
     }
 
+    function getAssignments(){
+      return {
+        combined:'WASD + Arrow Keys + touch joystick',
+        wasd:'WASD + touch joystick',
+        arrows:'Arrow Keys'
+      };
+    }
+
     return {
       keys,
       joy,
-      getVector
+      keyboardVector,
+      getVector,
+      getVectorFor:getVector,
+      getAssignments
     };
   }
 
