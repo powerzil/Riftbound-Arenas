@@ -247,13 +247,24 @@ const playerSystem=window.RB_PLAYER;
 // Multiplayer foundation: runtime player state now lives in players[].
 // During MP1, the existing singleplayer code is kept stable through a temporary
 // compatibility bridge that maps old singleplayer identifiers to players[0].
-players=[playerSystem.createRuntimePlayer({
- id:1,
- className:selected,
- characters:CHARACTERS,
- W,H,
- controlScheme:'combined'
-})];
+players=[
+ playerSystem.createRuntimePlayer({
+  id:1,
+  className:selected,
+  characters:CHARACTERS,
+  W,H,
+  controlScheme:'combined',
+  enabled:true
+ }),
+ playerSystem.createRuntimePlayer({
+  id:2,
+  className:'Mage',
+  characters:CHARACTERS,
+  W,H,
+  controlScheme:'arrows',
+  enabled:false
+ })
+];
 
 function activePlayerState(){return players[0]}
 function installSinglePlayerCompatibilityBindings(){
@@ -281,10 +292,19 @@ window.RB_RUNTIME={
  get activePlayer(){return activePlayerState()},
  snapshot(){
   return players.map(p=>({
-   id:p.id,className:p.className,controlScheme:p.controlScheme,
+   id:p.id,label:p.label,enabled:p.enabled,
+   className:p.className,controlScheme:p.controlScheme,
    hp:p.hero.hp,maxHp:p.hero.maxHp,danger:p.danger,xp:p.xp,
    level:p.level,xpNeed:p.xpNeed,engineerHeat:p.engineerHeat
   }));
+ },
+ controls(){
+  return {
+   assignments:input.getAssignments(),
+   p1:input.getVectorFor('wasd'),
+   p2:input.getVectorFor('arrows'),
+   singleplayer:input.getVectorFor('combined')
+  };
  }
 };
 
@@ -325,6 +345,10 @@ function ui(){
 }
 function resetRun(){
  running=true;paused=false;dead=false;dungeon=save.selectedDungeon||1;room=1;coins=0;runCoinsBanked=0;noHealNext=false;
+ // MP2: Singleplayer still accepts both keyboard schemes. Player 2 already
+ // exists as an independent dormant runtime state for the next multiplayer step.
+ players[0].controlScheme='combined';players[0].enabled=true;
+ players[1].controlScheme='arrows';players[1].enabled=false;
  playerSystem.resetRuntimePlayer(activePlayerState(),{className:selected,characters:CHARACTERS,W,H});
  save.selected=selected;persist();startOverlay.classList.remove('show');dungeonOverlay.classList.remove('show');deadOverlay.classList.remove('show');skillOverlay.classList.remove('show');contractOverlay.classList.remove('show');pathOverlay.classList.remove('show');
  currentContract=CONTRACTS[0];buildRoom();ui();announce(selected.toUpperCase())
@@ -740,7 +764,7 @@ function update(dt){
   smokeClock-=dt;
   if(smokeClock<=0){damageHero(Math.max(2,hero.maxHp*.035)*(hero.poisonVulnerability||1),'smoke');smokeClock=.8}
  }
- const {dx,dy}=input.getVector();
+ const {dx,dy}=input.getVectorFor(activePlayerState().controlScheme);
  const mag=Math.hypot(dx,dy);moveMagnitude=mag;
  if(mag>.05){
   playerSystem.move(hero,dx,dy,dt,{W,H,walls,circleRectCollide});
