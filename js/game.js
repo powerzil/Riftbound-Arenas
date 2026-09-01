@@ -302,6 +302,7 @@ function installSinglePlayerCompatibilityBindings(){
 installSinglePlayerCompatibilityBindings();
 
 window.RB_RUNTIME={
+ get version(){return 'MP4A'},
  get players(){return players},
  get activePlayer(){return activePlayerState()},
  get coopTestMode(){return coopTestMode},
@@ -325,6 +326,9 @@ window.RB_RUNTIME={
  setPlayer2Class(name){
   if(!(name in CHARACTERS))return false;
   coopP2Class=name;players[1].className=name;return true;
+ },
+ enemyTargets(){
+  return enemies.map((e,i)=>({index:i,type:e.type,bossKind:e.bossKind||null,targetPlayerId:e.targetPlayerId||null}));
  }
 };
 
@@ -780,6 +784,21 @@ function heroHitCircles(){return playerSystem.hitCircles(hero)}
 function projectileHitsHero(p){return playerSystem.projectileHits(hero,p)}
 function enemyTouchesHero(e){return playerSystem.enemyTouches(hero,e)}
 function heroMovementRadius(){return playerSystem.movementRadius()}
+
+// MP4A: target selection only. Damage/projectile collision remains P1-only for now.
+function targetablePlayers(){
+ return players.filter(p=>p.enabled&&p.hero&&p.hero.hp>0);
+}
+function getEnemyTargetHero(e){
+ let best=null,bestD=Infinity;
+ for(const p of targetablePlayers()){
+  const dx=p.hero.x-e.x,dy=p.hero.y-e.y,d=dx*dx+dy*dy;
+  if(d<bestD){bestD=d;best=p}
+ }
+ if(best){e.targetPlayerId=best.id;return best.hero}
+ e.targetPlayerId=1;
+ return players[0].hero;
+}
 function updateDanger(dt){
  let proximity=0;
  for(const e of enemies){
@@ -844,7 +863,8 @@ function update(dt){
   enemies,hero,dt,room,dungeon,W,H,enemyShots,
   audio,announce,addShake,spawnEnemy,spawnExplosion,
   obstacleCircle,pushEnemyAwayFromWalls,moveEnemyCollisionSafe,
-  enforceEnemyWallClearance,enemyTouchesHero,damageHero
+  enforceEnemyWallClearance,enemyTouchesHero,damageHero,
+  getTargetHero:getEnemyTargetHero
  });
  roomSystem.updateHazards(hazards,hero,dt,{W,H,damageHero});
  for(const w of wraiths){
