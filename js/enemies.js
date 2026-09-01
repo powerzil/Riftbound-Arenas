@@ -69,15 +69,12 @@ window.RB_ENEMIES = (() => {
   }
 
   function updateAll({
-    enemies,players,dt,room,dungeon,W,H,enemyShots,
+    enemies,hero,dt,room,dungeon,W,H,enemyShots,
     audio,announce,addShake,spawnEnemy,spawnExplosion,
     obstacleCircle,pushEnemyAwayFromWalls,moveEnemyCollisionSafe,
-    enforceEnemyWallClearance,getTargetPlayer,enemyTouchesPlayer,damagePlayer
+    enforceEnemyWallClearance,enemyTouchesHero,damageHero
   }){
     for(const e of enemies){
-      const targetPlayer=getTargetPlayer(e);
-      if(!targetPlayer)continue;
-      const hero=targetPlayer.hero;
       const oldEX=e.x,oldEY=e.y;
       e.didTeleport=false;
       e.hurt=Math.max(0,e.hurt-dt);
@@ -355,11 +352,11 @@ window.RB_ENEMIES = (() => {
       e.x=Math.max(e.r+14,Math.min(W-e.r-14,e.x));
       e.y=Math.max(e.r+60,Math.min(H-e.r-24,e.y));
 
-      if(enemyTouchesPlayer(targetPlayer,e)){
+      if(enemyTouchesHero(e)){
         let dmg=10;
         if(e.type==='boss')dmg=e.bossKind==='brute'?(e.charging?36:20):24;
         if(e.elite==='frenzied')dmg*=1.3;
-        damagePlayer(targetPlayer,dmg,'contact');
+        damageHero(dmg);
         if(e.vampiric)e.hp=Math.min(e.maxHp,e.hp+dmg*.4);
         e.x-=Math.cos(a)*24;
         e.y-=Math.sin(a)*24;
