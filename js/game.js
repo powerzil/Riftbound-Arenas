@@ -302,7 +302,7 @@ function installSinglePlayerCompatibilityBindings(){
 installSinglePlayerCompatibilityBindings();
 
 window.RB_RUNTIME={
- get version(){return 'MP4A'},
+ get version(){return 'MP4B'},
  get players(){return players},
  get activePlayer(){return activePlayerState()},
  get coopTestMode(){return coopTestMode},
@@ -588,20 +588,55 @@ function killEnemy(e){
  if(Math.random()<potionChance)potions.push({x:e.x,y:e.y,r:11,bob:Math.random()*10});
  for(let i=0;i<10;i++)particles.push({x:e.x,y:e.y,vx:(Math.random()-.5)*130,vy:(Math.random()-.5)*130,life:.45})
 }
-function damageHero(n,source='hit'){
+function damagePlayer(player,n,source='hit'){
+ if(!player||!player.enabled||!player.hero||player.hero.hp<=0)return;
+ const h=player.hero;
+ const isP1=player===players[0];
+
  if(devGodMode){
-  if(source!=='smoke')floatText(hero.x,hero.y-32,'IMMUNE','#c9baff');
+  if(source!=='smoke')floatText(h.x,h.y-32,'IMMUNE','#c9baff');
   return
  }
- if(hero.shield>0&&source!=='smoke'){hero.shield--;announce('BLOCKED');audio.crit();return}
+
+ if(h.shield>0&&source!=='smoke'){
+  h.shield--;
+  if(isP1)announce('BLOCKED');
+  else floatText(h.x,h.y-32,'BLOCKED','#c9baff');
+  audio.crit();
+  return
+ }
+
  if(currentContract.id==='glass'&&source!=='smoke')n*=2;
- if(hero.dangerAddict&&source!=='smoke')danger=0;
- hero.hp-=n;damageTakenRoom+=n;if(!hero.dangerAddict)danger=Math.min(100,danger+18);peakDanger=Math.max(peakDanger,danger);ui();
- hero.hitFlash=.16;
- if(source==='smoke'){audio.poison()}
- else{flashDamage();addShake(source==='explosion'?6:3);audio.hurt()}
- if(hero.hp<=0)endRun()
+
+ if(h.dangerAddict&&source!=='smoke')player.danger=0;
+
+ h.hp-=n;
+ player.damageTakenRoom+=n;
+ if(!h.dangerAddict)player.danger=Math.min(100,player.danger+18);
+ player.peakDanger=Math.max(player.peakDanger,player.danger);
+ h.hitFlash=.16;
+
+ if(isP1)ui();
+ else floatText(h.x,h.y-31,'-'+Math.ceil(n),'#ff8b93');
+
+ if(source==='smoke')audio.poison();
+ else{
+  flashDamage();
+  addShake(source==='explosion'?6:3);
+  audio.hurt();
+ }
+
+ if(h.hp<=0){
+  h.hp=0;
+  if(isP1){
+   endRun();
+  }else{
+   player.enabled=false;
+   announce(player.label+' DOWN');
+  }
+ }
 }
+function damageHero(n,source='hit'){return damagePlayer(players[0],n,source)}
 function endRun(){
  if(dead)return;running=false;dead=true;paused=true;save.best=Math.max(save.best,room);syncRunCoinsToBank();persist();
  $('deadTitle').textContent=`${dungeonById(dungeon).name} — ROOM ${room}`;
@@ -785,19 +820,24 @@ function projectileHitsHero(p){return playerSystem.projectileHits(hero,p)}
 function enemyTouchesHero(e){return playerSystem.enemyTouches(hero,e)}
 function heroMovementRadius(){return playerSystem.movementRadius()}
 
-// MP4A: target selection only. Damage/projectile collision remains P1-only for now.
-function targetablePlayers(){
+// MP4B: enemy targeting + player-specific enemy damage.
+function combatPlayers(){
  return players.filter(p=>p.enabled&&p.hero&&p.hero.hp>0);
 }
-function getEnemyTargetHero(e){
+function getEnemyTargetPlayer(e){
  let best=null,bestD=Infinity;
- for(const p of targetablePlayers()){
+ for(const p of combatPlayers()){
   const dx=p.hero.x-e.x,dy=p.hero.y-e.y,d=dx*dx+dy*dy;
   if(d<bestD){bestD=d;best=p}
  }
- if(best){e.targetPlayerId=best.id;return best.hero}
- e.targetPlayerId=1;
- return players[0].hero;
+ if(best)e.targetPlayerId=best.id;
+ return best;
+}
+function projectileHitsPlayer(player,projectile){
+ return !!(player&&player.enabled&&player.hero&&player.hero.hp>0&&playerSystem.projectileHits(player.hero,projectile));
+}
+function enemyTouchesPlayer(player,e){
+ return !!(player&&player.enabled&&player.hero&&player.hero.hp>0&&playerSystem.enemyTouches(player.hero,e));
 }
 function updateDanger(dt){
  let proximity=0;
@@ -828,8 +868,8 @@ function update(dt){
  players[0].hero.attackAnim=Math.max(0,players[0].hero.attackAnim-dt);
  players[0].hero.hitFlash=Math.max(0,players[0].hero.hitFlash-dt);
 
- // MP3: Player 2 has independent movement/render state only.
- // Combat, targeting, damage, Danger and XP are intentionally still P1-only.
+ // MP4B: Player 2 keeps independent movement/render state.
+ // Enemy targeting and enemy damage are now player-specific; P2 attacks/XP remain disabled.
  if(players[1].enabled){
   const v2=input.getVectorFor(players[1].controlScheme);
   const mag2=Math.hypot(v2.dx,v2.dy);players[1].moveMagnitude=mag2;
@@ -860,11 +900,13 @@ function update(dt){
   if(!b.near&&d<34+b.r&&d>16+b.r){b.near=true;danger=Math.min(100,danger+7);peakDanger=Math.max(peakDanger,danger)}
  }
  enemySystem.updateAll({
-  enemies,hero,dt,room,dungeon,W,H,enemyShots,
+  enemies,players,hero,dt,room,dungeon,W,H,enemyShots,
   audio,announce,addShake,spawnEnemy,spawnExplosion,
   obstacleCircle,pushEnemyAwayFromWalls,moveEnemyCollisionSafe,
-  enforceEnemyWallClearance,enemyTouchesHero,damageHero,
-  getTargetHero:getEnemyTargetHero
+  enforceEnemyWallClearance,
+  getTargetPlayer:getEnemyTargetPlayer,
+  enemyTouchesPlayer,
+  damagePlayer
  });
  roomSystem.updateHazards(hazards,hero,dt,{W,H,damageHero});
  for(const w of wraiths){
@@ -895,7 +937,16 @@ function update(dt){
   }
  }
  const killed=enemies.filter(e=>e.dead);enemies=enemies.filter(e=>!e.dead);killed.forEach(killEnemy);
- for(const b of enemyShots){if(!b.dead&&projectileHitsHero(b)){b.dead=true;damageHero(b.damage)}}
+ for(const b of enemyShots){
+  if(b.dead)continue;
+  for(const player of combatPlayers()){
+   if(projectileHitsPlayer(player,b)){
+    b.dead=true;
+    damagePlayer(player,b.damage,'projectile');
+    break;
+   }
+  }
+ }
  enemyShots=enemyShots.filter(b=>!b.dead&&b.x>-30&&b.x<W+30&&b.y>30&&b.y<H+30);
  shots=shots.filter(s=>s.life>0&&s.x>-30&&s.x<W+30&&s.y>30&&s.y<H+30);
  particles.forEach(p=>{p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt});particles=particles.filter(p=>p.life>0);
