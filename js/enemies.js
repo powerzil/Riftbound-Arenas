@@ -69,12 +69,13 @@ window.RB_ENEMIES = (() => {
   }
 
   function updateAll({
-    enemies,hero,dt,room,dungeon,W,H,enemyShots,
+    enemies,hero:defaultHero,dt,room,dungeon,W,H,enemyShots,
     audio,announce,addShake,spawnEnemy,spawnExplosion,
     obstacleCircle,pushEnemyAwayFromWalls,moveEnemyCollisionSafe,
-    enforceEnemyWallClearance,enemyTouchesHero,damageHero
+    enforceEnemyWallClearance,enemyTouchesHero,damageHero,getTargetHero
   }){
     for(const e of enemies){
+      const hero=(typeof getTargetHero==='function'?getTargetHero(e):null)||defaultHero;
       const oldEX=e.x,oldEY=e.y;
       e.didTeleport=false;
       e.hurt=Math.max(0,e.hurt-dt);
