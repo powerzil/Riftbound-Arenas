@@ -302,7 +302,7 @@ function installSinglePlayerCompatibilityBindings(){
 installSinglePlayerCompatibilityBindings();
 
 window.RB_RUNTIME={
- get version(){return 'MP4B'},
+ get version(){return 'MP4C'},
  get players(){return players},
  get activePlayer(){return activePlayerState()},
  get coopTestMode(){return coopTestMode},
@@ -974,16 +974,19 @@ function update(dt){
  }
  if(!enemies.length&&!roomCleared)completeRoom();
 
- // Reliable exit-gate transition. Use the tighter body hitbox, not the old hero radius.
+ // MP4C: either living player can trigger the room exit gate.
  if(roomCleared && gate){
-   const body=heroHitCircles();
    let entered=false;
-   for(const h of body){
-     const rr=h.r+gate.r+10;
-     if((h.x-gate.x)*(h.x-gate.x)+(h.y-gate.y)*(h.y-gate.y) < rr*rr){
-       entered=true;
-       break;
+   for(const player of combatPlayers()){
+     const body=playerSystem.hitCircles(player.hero);
+     for(const h of body){
+       const rr=h.r+gate.r+10;
+       if((h.x-gate.x)*(h.x-gate.x)+(h.y-gate.y)*(h.y-gate.y) < rr*rr){
+         entered=true;
+         break;
+       }
      }
+     if(entered)break;
    }
    if(entered){
      doorHint.style.opacity=0;
